@@ -1,0 +1,19 @@
+main = {
+  SOI
+  ~ (stmt? ~ NEWLINE)*
+  ~ exp ~ NEWLINE*
+  ~ EOI
+}
+stmt = { lhs ~ "=" ~ exp }
+lhs = { name | dup }
+dup = { "{" ~ name ~ name ~ "}" }
+name = @{ char+ | "*" }
+exp = { aexp+ }
+aexp = { bra | lam | name }
+bra = { "(" ~ exp ~ ")" }
+lam = { "\\" ~ name ~ "." ~ exp }
+char = { ASCII_ALPHANUMERIC | "_" | "/" }
+WHITESPACE = _{ " " }
+COMMENT = _{block | line}
+block = { "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+line = { "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }

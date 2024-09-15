@@ -1,0 +1,9 @@
+[package]
+name = "netty"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pest = "2.7.12"
+pest_derive = "2.7.12"
+rand = "0.8.5"
