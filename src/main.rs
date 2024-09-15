@@ -1,6 +1,8 @@
 pub mod net;
+pub mod wonton;
 use std::rc::Rc;
-use net::{parse_eqs, Name};
+use net::Name;
+use wonton::parse_eqs;
 
 const PROGRAM: &str = r"
 id = \x. x
@@ -22,8 +24,7 @@ double = \nd. \fd. \xd. nfd0 (nfd1 xd)
 // {d5 d51} = d41
 // d6 = d51
 
-{d0 *} = double
-d0
+double one
 ";
 
 fn main() {
