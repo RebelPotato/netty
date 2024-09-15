@@ -4,15 +4,15 @@ main = {
   ~ EOI
 }
 def = { name ~ "=" ~ exp }
-exp = { tree ~ "where" ~ conn+ }
+exp = { tree ~ ("where" ~ conn+)? }
 tree = { node | name }
-node = { era | ref | num | con | dup | ope | swi }
+node = { era | ref | num | con | dup | opr | swi }
 era = { "*" }
 ref = { "@" ~ name }
 num = { NUMBER+ }
 con = { "(" ~ tree ~ tree ~ ")" }
 dup = { "{" ~ tree ~ tree ~ "}" }
-ope = { "$(" ~ tree ~ tree ~ ")" }
+opr = { "$(" ~ tree ~ tree ~ ")" }
 swi = { "?(" ~ tree ~ tree ~ ")" }
 conn = { tree ~ "~" ~ tree }
 
