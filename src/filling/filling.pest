@@ -1,0 +1,24 @@
+main = {
+  SOI
+  ~ def+
+  ~ EOI
+}
+def = { name ~ "=" ~ exp }
+exp = { tree ~ "where" ~ conn+ }
+tree = { node | name }
+node = { era | ref | num | con | dup | ope | swi }
+era = { "*" }
+ref = { "@" ~ name }
+num = { NUMBER+ }
+con = { "(" ~ tree ~ tree ~ ")" }
+dup = { "{" ~ tree ~ tree ~ "}" }
+ope = { "$(" ~ tree ~ tree ~ ")" }
+swi = { "?(" ~ tree ~ tree ~ ")" }
+conn = { tree ~ "~" ~ tree }
+
+name = @{ char+  }
+char = { ASCII_ALPHANUMERIC | "_" | "/" | "-" }
+WHITESPACE = _{ " " | NEWLINE }
+COMMENT = _{block | line}
+block = { "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+line = { "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }

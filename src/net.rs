@@ -146,13 +146,13 @@ fn rule_con(eqs: &mut Vec<Equation>, x: Term, y: Wire, z: Wire) {
         Term::Erase => unreachable!(),
     }
 }
-fn rule_dup(_eqs: &mut Vec<Equation>, x: Term, _y: Wire, _z: Wire) {
+fn rule_dup(eqs: &mut Vec<Equation>, x: Term, y: Wire, z: Wire) {
     match x {
-        // Term::Dup(y0, z0) => {
-        //     eqs.push(Equation::new(y, y0));
-        //     eqs.push(Equation::new(z, z0));
-        // }
-        Term::Dup(_, _) | Term::Add(_, _) | Term::S(_) | Term::Z => panic!("Dup does not interact with {}", x),
+        Term::Dup(y0, z0) => {
+            eqs.push(Equation::new(y, y0));
+            eqs.push(Equation::new(z, z0));
+        }
+        Term::Add(_, _) | Term::S(_) | Term::Z => panic!("Dup does not interact with {}", x),
         Term::Con(_, _) | Term::Erase => unreachable!(),
     }
 }
