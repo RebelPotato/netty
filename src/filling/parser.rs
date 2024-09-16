@@ -8,12 +8,14 @@ use std::collections::HashMap;
 struct Names {
     map: HashMap<String, Addr>,
     count: HashMap<String, u8>,
+    counter: Addr,
 }
 impl Names {
     fn new() -> Names {
         Names {
             map: HashMap::new(),
             count: HashMap::new(),
+            counter: 0,
         }
     }
     fn has(&mut self, name: &str) -> bool {
@@ -27,9 +29,11 @@ impl Names {
         }
         *self.map.get(name).unwrap()
     }
-    fn put(&mut self, name: &str, addr: Addr) {
-        self.map.insert(name.to_string(), addr);
+    fn put(&mut self, name: &str) -> Addr {
+        self.counter += 1;
+        self.map.insert(name.to_string(), self.counter);
         self.count.insert(name.to_string(), 1);
+        self.counter
     }
 }
 
@@ -48,14 +52,13 @@ impl State {
         State {
             names: Names::new(),
             def_names: HashMap::new(),
-            node: vec![NodePair::new(super::FREE, super::FREE)],
+            node: Vec::new(),
             rbag: Vec::new(),
         }
     }
     fn clear_buffer(&mut self) {
         self.rbag.clear();
         self.node.clear();
-        self.node.push(NodePair::new(super::FREE, super::FREE));
     }
     fn add_pair(&mut self, left: Port, right: Port) -> Addr {
         let addr = self.node.len() as Addr;
@@ -112,11 +115,7 @@ impl State {
                 let addr = if self.names.has(name) {
                     self.names.get(name)
                 } else {
-                    let left = super::FREE;
-                    let right = super::FREE;
-                    let addr = self.add_pair(left, right);
-                    self.names.put(name, addr);
-                    addr
+                    self.names.put(name)
                 };
                 (Port::new(super::VAR, addr), true)
             }
