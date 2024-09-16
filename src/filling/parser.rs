@@ -85,7 +85,7 @@ impl State {
             Rule::num => {
                 let mut pair = pair.into_inner();
                 let value: NumValue = pair.next().unwrap().as_str().parse().unwrap();
-                (Num::new(super::U8, value).as_port(), true)
+                (Num::new(super::NTU8, value).as_port(), true)
             }
             Rule::con => {
                 let (node, safe) = self.parse_pair(pair);

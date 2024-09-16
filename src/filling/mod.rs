@@ -1,5 +1,6 @@
 // reference implementation for filling VM
 pub mod parser;
+pub mod ast;
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -103,7 +104,7 @@ pub const NMUL: NumTag = 0x04; // multiplication
 pub const NDIV: NumTag = 0x05; // division
 pub const NREM: NumTag = 0x06; // remainder
 pub const NEQU: NumTag = 0x07; // equality
-// TODO: more operations
+                               // TODO: more operations
 
 pub type NumValue = u8; // 8-bit value
 pub const NUM_MAX: NumValue = 0xFF;
@@ -144,14 +145,12 @@ impl Num {
             (true, true) => Num::new_u8(0),
             (true, false) => Num::partial(a, b),
             (false, true) => Num::partial(b, a),
-            (false, false) => {
-                match (a.is_op(), b.is_op()) {
-                    (true, true) => Num::new_u8(0),
-                    (false, false) => Num::new_u8(0),
-                    (true, false) => Self::apply(a, b.value()),
-                    (false, true) => Self::apply(b, a.value()),
-                }
-            }
+            (false, false) => match (a.is_op(), b.is_op()) {
+                (true, true) => Num::new_u8(0),
+                (false, false) => Num::new_u8(0),
+                (true, false) => Self::apply(a, b.value()),
+                (false, true) => Self::apply(b, a.value()),
+            },
         }
     }
     fn apply(op: Self, y: NumValue) -> Self {
@@ -163,7 +162,7 @@ impl Num {
             NDIV => Num::new_u8(x.wrapping_div(y)),
             NREM => Num::new_u8(x.wrapping_rem(y)),
             NEQU => Num::new_u8((x == y) as NumValue),
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
@@ -229,6 +228,14 @@ impl Net {
     pub fn node_is_free(&self, i: usize) -> bool {
         self.node[i] == Pair(0)
     }
+    pub fn get(&self, i: usize) -> Pair {
+        self.node[i].clone()
+    }
+    pub fn take(&mut self, i: usize) -> Pair {
+        let pair = self.node[i].clone();
+        self.node[i] = Pair(0);
+        pair
+    }
     pub fn put(&mut self, i: usize, pair: Pair) {
         self.node[i] = pair;
     }
@@ -249,6 +256,12 @@ impl Redex {
             store: RBag::new(),
         }
     }
+    pub fn push_redex(&mut self, redex: Pair) {
+        self.store.push_redex(redex);
+    }
+    pub fn pop_redex(&mut self) -> Option<Pair> {
+        self.store.pop_redex()
+    }
     // allocate `num` nodes, return true if successful
     pub fn node_alloc(&mut self, net: &Net, num: usize) -> bool {
         let mut got = 0;
@@ -265,29 +278,44 @@ impl Redex {
         }
         return got >= num;
     }
-    pub fn interact_void(&mut self, _net: &Net, _a: Port, _b: Port) -> bool {
+}
+
+pub fn interact_link(redex: &mut Redex, net: &mut Net, a: Port, b: Port) -> bool {
+    let (v, c) = if a.tag() == VAR { (a, b) } else { (b, a) };
+    let vnode = net.take(v.addr() as usize);
+    if vnode.right() == FREE {
+        // this node is an indirection node and has been cleared
+        redex.push_redex(Pair::new(vnode.left(), c));
         true
+    } else {
+        // this node becomes an indirection node
+        let other = if c == vnode.left() { vnode.right() } else { vnode.left() };
+        net.put(v.addr() as usize, Pair::new(other, FREE));
+        false
     }
-    pub fn step(&mut self, net: &Net) -> bool {
-        let redex = self.store.pop_redex();
-        if let Some(redex) = redex {
-            let a = redex.left();
-            let b = redex.right();
-            let rule = Port::rule_for(a.clone(), b.clone());
-            let success = match rule {
-                VOID => self.interact_void(net, a, b),
-                _ => todo!(),
-                // _ => unreachable!(),
-            };
-            if success {
-                true
-            } else {
-                self.store.push_redex(redex);
-                false
-            }
+}
+pub fn interact_void(_redex: &mut Redex, _net: &Net, _a: Port, _b: Port) -> bool {
+    true
+}
+pub fn step(redex: &mut Redex, net: &mut Net) -> bool {
+    let top = redex.pop_redex();
+    if let Some(top) = top {
+        let a = top.left();
+        let b = top.right();
+        let rule = Port::rule_for(a.clone(), b.clone());
+        let success = match rule {
+            VOID => interact_void(redex, net, a, b),
+            _ => todo!(),
+            // _ => unreachable!(),
+        };
+        if success {
+            true
         } else {
+            redex.push_redex(top);
             false
         }
+    } else {
+        false
     }
 }
 
