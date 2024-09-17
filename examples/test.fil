@@ -1,6 +1,8 @@
-foo = (z z)
+one = 1
+two = 2
+plus = [+]
 
-main = (a b)
+main = result
   where
-    (b a) ~ (x (y *))
-    {y x} ~ @foo
+    @one ~ $(plus_two result)
+    @plus ~ $(@two plus_two)

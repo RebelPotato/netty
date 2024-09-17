@@ -1,8 +1,8 @@
+pub mod bowl;
 pub mod filling;
-pub mod net;
+
 use std::fs::read_to_string;
 use std::path::Path;
-
 use filling::parser::parse;
 use filling::{step, Alloc, Net, RBag};
 

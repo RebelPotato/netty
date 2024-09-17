@@ -147,6 +147,9 @@ impl Num {
     pub fn is_reversed(&self) -> bool {
         self.tag() & NREV != 0
     }
+    pub fn reversed(&self) -> Self {
+        Num(self.0 ^ (NREV as u16) << 8)
+    }
     pub fn operate(a: Self, b: Self) -> Self {
         match (a.is_sym(), b.is_sym()) {
             (true, true) => Num::new_u8(0),
@@ -501,6 +504,19 @@ pub fn step(redex: &mut RBag, alloc: &mut Alloc, net: &mut Net, rom: &ROM) -> bo
 }
 
 // Visualizations
+fn num_tag_to_str(tag: NumTag) -> &'static str {
+    match tag {
+        NSYM => "OP",
+        NTU8 => "U8",
+        NADD => "+ ",
+        NSUB => "- ",
+        NMUL => "* ",
+        NDIV => "/ ",
+        NREM => "% ",
+        NEQU => "==",
+        _ => unreachable!(),
+    }
+}
 
 fn tag_to_str(tag: Tag) -> &'static str {
     match tag {
@@ -516,12 +532,35 @@ fn tag_to_str(tag: Tag) -> &'static str {
     }
 }
 
+impl Display for Num {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let tag = self.tag();
+        if tag < NREV {
+            if self.tag() == NSYM {
+                write!(f, "{}", num_tag_to_str(self.value()))?;
+            } else {
+                write!(f, "{:02X}", self.value())?;
+            }
+            write!(f, "{}", num_tag_to_str(self.tag()))
+        } else {
+            write!(f, "{}", num_tag_to_str(self.tag()))?;
+            if self.tag() == NSYM {
+                write!(f, "{}", num_tag_to_str(self.value()))
+            } else {
+                write!(f, "{:02X}", self.value())
+            }
+        }
+    }
+}
+
 impl Display for Port {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         if *self == FREE {
             write!(f, "  FREE  ")
         } else if *self == NONE {
             write!(f, "  NONE  ")
+        } else if self.tag() == NUM {
+            write!(f, "NUM {}", Num(self.addr()))
         } else {
             write!(f, "{} {:04X}", tag_to_str(self.tag()), self.addr())
         }

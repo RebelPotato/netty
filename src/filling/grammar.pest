@@ -5,16 +5,21 @@ main = {
 }
 def = { name ~ "=" ~ exp }
 exp = { tree ~ ("where" ~ conn+)? }
+conn = { tree ~ "~" ~ tree }
 tree = { node | name }
 node = { era | ref | num | con | dup | opr | swi }
 era = { "*" }
 ref = { "@" ~ name }
-num = { NUMBER+ }
 con = { "(" ~ tree ~ tree ~ ")" }
 dup = { "{" ~ tree ~ tree ~ "}" }
 opr = { "$(" ~ tree ~ tree ~ ")" }
 swi = { "?(" ~ tree ~ tree ~ ")" }
-conn = { node ~ "~" ~ node }
+num = { u8 | opn }
+opn = { "[" ~ (lop | rop | prim) ~ "]" }
+lop = { u8 ~ prim }
+rop = { prim ~ u8 }
+u8 = @{ NUMBER+ }
+prim = { "+" | "-" | "*" | "/" }
 
 name = @{ char+  }
 char = { ASCII_ALPHANUMERIC | "_" | "/" | "-" }

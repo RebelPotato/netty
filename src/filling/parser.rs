@@ -1,5 +1,5 @@
 use super::ast::{Addr, DefNode, Node, ROMNode};
-use super::Num;
+use super::{Num, NumTag};
 use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
@@ -21,6 +21,49 @@ fn push_node(node: Node, store: &mut Vec<Node>) -> Addr {
     addr
 }
 
+fn parse_op(s: &str) -> NumTag {
+    match s {
+        "+" => super::NADD,
+        "-" => super::NSUB,
+        "*" => super::NMUL,
+        "/" => super::NDIV,
+        "%" => super::NREM,
+        "==" => super::NEQU,
+        _ => panic!("Invalid operator"),
+    }
+}
+
+fn parse_num(pair: Pair<Rule>) -> Num {
+    let pair = pair.into_inner().next().unwrap();
+    println!("{}", pair.as_str());
+    match pair.as_rule() {
+        Rule::u8 => Num::new_u8(pair.as_str().parse().unwrap()),
+        Rule::opn => {
+            let inner = pair.into_inner().next().unwrap();
+            match inner.as_rule() {
+                Rule::lop => {
+                    let mut inner = inner.into_inner();
+                    let num = inner.next().unwrap().as_str().parse().unwrap();
+                    let op = parse_op(inner.next().unwrap().as_str());
+                    Num::new(op, num)
+                },
+                Rule::rop => {
+                    let mut inner = inner.into_inner();
+                    let op = parse_op(inner.next().unwrap().as_str());
+                    let num = inner.next().unwrap().as_str().parse().unwrap();
+                    Num::new(op, num).reversed()
+                },
+                Rule::prim => {
+                    let op = parse_op(inner.as_str());
+                    Num::new(super::NSYM, op)
+                }
+                _ => unreachable!(),
+            }
+        }
+        _ => unreachable!()
+    }
+}
+
 // returns the node and if it is safe
 fn parse_node(pair: Pair<Rule>, store: &mut Vec<Node>) -> (Node, bool) {
     let pair = pair.into_inner().next().unwrap();
@@ -30,10 +73,7 @@ fn parse_node(pair: Pair<Rule>, store: &mut Vec<Node>) -> (Node, bool) {
             let name = pair.into_inner().next().unwrap().as_str().to_string();
             (Node::REF(name), true)
         }
-        Rule::num => {
-            let num = pair.to_string().parse().unwrap();
-            (Node::NUM(Num::new_u8(num)), true)
-        }
+        Rule::num => (Node::NUM(parse_num(pair)), true),
         Rule::con => {
             let (left, right, safe) = parse_pair(pair, store);
             (
@@ -84,8 +124,8 @@ fn parse_exp(pair: Pair<Rule>, store: &mut Vec<Node>, rbag: &mut Vec<(Addr, Addr
     let mut safe = safe;
     for conn in pair {
         let mut conn = conn.into_inner();
-        let (left, lsafe) = parse_node(conn.next().unwrap(), store);
-        let (right, rsafe) = parse_node(conn.next().unwrap(), store);
+        let (left, lsafe) = parse_tree(conn.next().unwrap(), store);
+        let (right, rsafe) = parse_tree(conn.next().unwrap(), store);
         rbag.push((push_node(left, store), push_node(right, store)));
         safe = safe && lsafe && rsafe;
     }
