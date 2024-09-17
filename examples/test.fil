@@ -1,0 +1,6 @@
+foo = (z z)
+
+main = (a b)
+  where
+    (b a) ~ (x (y *))
+    {y x} ~ @foo

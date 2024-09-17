@@ -25,9 +25,6 @@ pub struct DefNode {
     pub store: Vec<Node>,        // node buffer without variable nodes
 }
 
-fn push_in(x: Pair, t: Port) -> Pair {
-    Pair::new(t, x.left())
-}
 fn push_node(acc: &mut Vec<Pair>, pair: Pair) -> super::Addr {
     let addr = acc.len();
     acc.push(pair);
@@ -71,18 +68,7 @@ impl DefNode {
         let left = self.translate_node(a.clone(), acc, var_map, def_map);
         let right = self.translate_node(b.clone(), acc, var_map, def_map);
         let addr = push_node(acc, Pair::new(left.clone(), right.clone()));
-        let port = Port::new(tag, addr as super::Addr);
-
-        // variable nodes record the ports it connects to
-        if left.tag() == super::VAR {
-            let v = acc[left.addr() as usize].clone();
-            acc[left.addr() as usize] = push_in(v, port.clone());
-        }
-        if right.tag() == super::VAR {
-            let v = acc[right.addr() as usize].clone();
-            acc[right.addr() as usize] = push_in(v, port.clone());
-        }
-        port
+        Port::new(tag, addr as super::Addr)
     }
 
     fn translate_node(
@@ -135,47 +121,31 @@ impl DefNode {
     }
 }
 
-pub fn to_rom(nodes: Vec<DefNode>) -> ROM {
-    let mut def_map = HashMap::new();
-    let mut defs = vec![];
-    for (i, node) in nodes.iter().enumerate() {
-        node.verify();
-        def_map.insert(node.name.clone(), i as super::Addr);
-        defs.push(node.to_def(&def_map));
-    }
-    ROM { defs }
+#[derive(Debug)]
+pub struct ROMNode {
+    main: DefNode,
+    defs: Vec<DefNode>,
 }
-// visualization
 
-// #[derive(Debug)]
-// struct Names {
-//     map: HashMap<String, Addr>,
-//     count: HashMap<String, u8>,
-//     counter: Addr,
-// }
-// impl Names {
-//     fn new() -> Names {
-//         Names {
-//             map: HashMap::new(),
-//             count: HashMap::new(),
-//             counter: 0,
-//         }
-//     }
-//     fn has(&self, name: &str) -> bool {
-//         self.map.contains_key(name)
-//     }
-//     fn get(&mut self, name: &str) -> Addr {
-//         let count = self.count.get_mut(name).unwrap();
-//         *count += 1;
-//         if *count > 2 {
-//             panic!("Variable {} should be used two times only", name);
-//         }
-//         *self.map.get(name).unwrap()
-//     }
-//     fn put(&mut self, name: &str) -> Addr {
-//         self.counter += 1;
-//         self.map.insert(name.to_string(), self.counter);
-//         self.count.insert(name.to_string(), 1);
-//         self.counter
-//     }
-// }
+impl ROMNode {
+    pub fn new(main: DefNode, defs: Vec<DefNode>) -> ROMNode {
+        ROMNode { main, defs }
+    }
+    pub fn into_rom(self) -> ROM {
+        let mut def_map = HashMap::new();
+        let mut defs = vec![];
+        self.main.verify();
+        def_map.insert(self.main.name.clone(), 0);
+        for (i, node) in self.defs.iter().enumerate() {
+            node.verify();
+            def_map.insert(node.name.clone(), (i + 1) as super::Addr);
+        }
+
+        defs.push(self.main.to_def(&def_map));
+        for node in self.defs.into_iter() {
+            node.verify();
+            defs.push(node.to_def(&def_map));
+        }
+        ROM { defs }
+    }
+}

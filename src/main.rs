@@ -1,29 +1,30 @@
-pub mod net;
 pub mod filling;
-use filling::ast::to_rom;
+pub mod net;
+use std::fs::read_to_string;
+use std::path::Path;
+
 use filling::parser::parse;
-use filling::{load_def, Net, Redex};
+use filling::{step, Alloc, Net, RBag};
 
-const PROGRAM: &str = r"
-foo = (z z)
-main = (a b)
-  where
-    (b a) ~ (x (y *))
-    {y x} ~ @foo
-";
-
-fn main() -> Result<(),  Box<dyn std::error::Error>> {
-    let nodes = parse(PROGRAM)?;
-    let rom = to_rom(nodes);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let program = read_to_string(Path::new("examples/test.fil"))?;
+    let nodes = parse(&program)?;
+    let rom = nodes.into_rom();
     println!("{}", rom);
 
     let mut net = Net::new(0xf);
-    let mut redex = Redex::new();
-    load_def(&mut redex, &mut net, &rom.defs[1]);
-    load_def(&mut redex, &mut net, &rom.defs[0]);
+    let mut redex = RBag::new();
+    let mut alloc = Alloc::new();
+
+    let main = rom.load_to(&mut redex, &mut alloc, &mut net).unwrap();
 
     println!("{}", net);
     println!("{}", redex);
+
+    while step(&mut redex, &mut alloc, &mut net, &rom) {
+        println!("{}", net);
+        println!("{}", redex);
+    }
 
     Ok(())
 }

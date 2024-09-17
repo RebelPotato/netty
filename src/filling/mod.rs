@@ -3,7 +3,7 @@ pub mod ast;
 pub mod parser;
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     fmt::{self, Display, Formatter},
 };
 
@@ -30,16 +30,12 @@ pub type Rule = u8;
 pub const LINK: Rule = 0x0;
 pub const CALL: Rule = 0x1;
 pub const VOID: Rule = 0x2;
-pub const ERAS: Rule = 0x3;
+pub const COPY: Rule = 0x3;
 pub const ANNI: Rule = 0x4;
 pub const COMM: Rule = 0x5;
 pub const OPER: Rule = 0x6;
 pub const SWIT: Rule = 0x7;
 
-pub fn is_high_priority(rule: Rule) -> bool {
-    // LINK, VOID, ERAS, ANNI
-    (0b00011101 >> rule) & 1 != 0
-}
 // 16-bit port: tag ~ addr
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Port(u16);
@@ -62,18 +58,22 @@ impl Port {
     pub fn addr(&self) -> Addr {
         self.0 & 0x1FFF
     }
+    pub fn is_literal(&self) -> bool {
+        let tag = self.tag();
+        tag == NUM || tag == ERA || tag == REF
+    }
 
     pub fn rule_for(a: Port, b: Port) -> Rule {
         const TABLE: [[Rule; 8]; 8] = [
-            //VAR  REF  ERA  NUM  CON  DUP  OPR  SWI
+            //VAR   REF   ERA   NUM   CON   DUP   OPR   SWI
             [LINK, LINK, LINK, LINK, LINK, LINK, LINK, LINK], // VAR
             [LINK, VOID, VOID, VOID, CALL, CALL, CALL, CALL], // REF
-            [LINK, VOID, VOID, VOID, ERAS, ERAS, ERAS, ERAS], // ERA
-            [LINK, VOID, VOID, VOID, ERAS, ERAS, OPER, SWIT], // NUM
-            [LINK, CALL, ERAS, ERAS, ANNI, COMM, COMM, COMM], // CON
-            [LINK, CALL, ERAS, ERAS, COMM, ANNI, COMM, COMM], // DUP
-            [LINK, CALL, ERAS, OPER, COMM, COMM, ANNI, COMM], // OPR
-            [LINK, CALL, ERAS, SWIT, COMM, COMM, COMM, ANNI], // SWI
+            [LINK, VOID, VOID, VOID, COPY, COPY, COPY, COPY], // ERA
+            [LINK, VOID, VOID, VOID, COPY, COPY, OPER, SWIT], // NUM
+            [LINK, CALL, COPY, COPY, ANNI, COMM, COMM, COMM], // CON
+            [LINK, CALL, COPY, COPY, COMM, ANNI, COMM, COMM], // DUP
+            [LINK, CALL, COPY, OPER, COMM, COMM, ANNI, COMM], // OPR
+            [LINK, CALL, COPY, SWIT, COMM, COMM, COMM, ANNI], // SWI
         ];
         return TABLE[a.tag() as usize][b.tag() as usize];
     }
@@ -105,6 +105,8 @@ pub const NDIV: NumTag = 0x05; // division
 pub const NREM: NumTag = 0x06; // remainder
 pub const NEQU: NumTag = 0x07; // equality
                                // TODO: more operations
+
+pub const NREV: NumTag = 0x20; // set fifth bit to reverse the operation
 
 pub type NumValue = u8; // 8-bit value
 pub const NUM_MAX: NumValue = 0xFF;
@@ -142,6 +144,9 @@ impl Num {
     pub fn is_op(&self) -> bool {
         self.tag() >= NADD
     }
+    pub fn is_reversed(&self) -> bool {
+        self.tag() & NREV != 0
+    }
     pub fn operate(a: Self, b: Self) -> Self {
         match (a.is_sym(), b.is_sym()) {
             (true, true) => Num::new_u8(0),
@@ -157,6 +162,7 @@ impl Num {
     }
     fn apply(op: Self, y: NumValue) -> Self {
         let x = op.value();
+        let (x, y) = if op.is_reversed() { (y, x) } else { (x, y) };
         match op.tag() {
             NADD => Num::new_u8(x.wrapping_add(y)),
             NSUB => Num::new_u8(x.wrapping_sub(y)),
@@ -185,6 +191,56 @@ pub struct ROM {
     pub defs: Vec<Def>,
 }
 
+// loads a definition into memory,
+// returning the def's root address in memory
+pub fn load_def(redex: &mut RBag, alloc: &mut Alloc, net: &mut Net, def: &Def) -> Option<Port> {
+    fn transfer_port(loc: &Vec<Addr>, p: Port) -> Port {
+        if p.is_literal() || p == FREE {
+            // literal nodes are left as is, as well as special meaning nodes
+            p
+        } else {
+            Port::new(p.tag(), loc[(p.addr() - 1) as usize] as Addr)
+        }
+    }
+    fn transfer_pair(loc: &Vec<Addr>, pair: &Pair) -> Pair {
+        Pair::new(
+            transfer_port(loc, pair.left()),
+            transfer_port(loc, pair.right()),
+        )
+    }
+
+    if alloc.request(net, def.node.len() - 1) {
+        // node i (starting from 1) is mapped to loc[i-1]
+        for (i, pair) in def.node.iter().enumerate().skip(1) {
+            net.put(alloc.loc[i - 1], transfer_pair(&alloc.loc, pair));
+        }
+        for pair in def.rbag.iter() {
+            redex.push_redex(transfer_pair(&alloc.loc, pair));
+        }
+        Some(transfer_port(&alloc.loc, def.root.clone()))
+    } else {
+        None
+    }
+}
+
+impl ROM {
+    pub fn load_def(
+        &self,
+        redex: &mut RBag,
+        alloc: &mut Alloc,
+        net: &mut Net,
+        i: Addr,
+    ) -> Option<Port> {
+        load_def(redex, alloc, net, &self.defs[i as usize])
+    }
+    pub fn load_to(&self, redex: &mut RBag, alloc: &mut Alloc, net: &mut Net) -> Option<Port> {
+        self.load_def(redex, alloc, net, 0)
+    }
+    pub fn is_safe(&self, i: Addr) -> bool {
+        self.defs[i as usize].safe
+    }
+}
+
 // VM memory
 #[derive(Debug)]
 pub struct RBag {
@@ -199,12 +255,6 @@ impl RBag {
     }
 
     pub fn push_redex(&mut self, redex: Pair) {
-        // let rule = Port::rule_for(redex.left(), redex.right());
-        // if is_high_priority(rule) {
-        //     self.redex.push_front(redex);
-        // } else {
-        //     self.redex.push_back(redex);
-        // }
         self.redex.push_back(redex);
     }
 
@@ -227,52 +277,47 @@ impl Net {
             node: vec![Pair(0); size],
         }
     }
-    pub fn node_is_free(&self, i: usize) -> bool {
+    pub fn node_is_free(&self, i: Addr) -> bool {
         // address 0 is reserved to represent FREE
-        i != 0 && self.node[i] == Pair(0)
+        i != 0 && self.node[i as usize] == Pair(0)
     }
-    pub fn get(&self, i: usize) -> Pair {
-        self.node[i].clone()
+    pub fn get(&self, i: Addr) -> &Pair {
+        &self.node[i as usize]
     }
-    pub fn take(&mut self, i: usize) -> Pair {
-        let pair = self.node[i].clone();
-        self.node[i] = Pair(0);
-        pair
+    pub fn swap(&mut self, i: Addr, pair: Pair) -> Pair {
+        let old = self.node[i as usize].clone();
+        self.node[i as usize] = pair;
+        old
     }
-    pub fn put(&mut self, i: usize, pair: Pair) {
-        self.node[i] = pair;
+    pub fn take(&mut self, i: Addr) -> Pair {
+        self.swap(i, Pair(0))
+    }
+    pub fn put(&mut self, i: Addr, pair: Pair) {
+        self.node[i as usize] = pair;
     }
 }
 
-pub struct Redex {
-    nput: usize,      // next node allocation index
-    nloc: Vec<usize>, // allocated node locations
-    store: RBag,      // local redex bag
+pub struct Alloc {
+    nput: Addr,     // next node allocation index
+    loc: Vec<Addr>, // allocated node locations
 }
 
 pub const MAX_ALLOC: usize = 0xFFF;
-impl Redex {
+impl Alloc {
     pub fn new() -> Self {
-        Redex {
+        Alloc {
             nput: 0,
-            nloc: vec![0; MAX_ALLOC],
-            store: RBag::new(),
+            loc: vec![0; MAX_ALLOC],
         }
     }
-    pub fn push_redex(&mut self, redex: Pair) {
-        self.store.push_redex(redex);
-    }
-    pub fn pop_redex(&mut self) -> Option<Pair> {
-        self.store.pop_redex()
-    }
     // allocate `num` nodes, return true if successful
-    pub fn node_alloc(&mut self, net: &Net, num: usize) -> bool {
+    pub fn request(&mut self, net: &Net, num: usize) -> bool {
         let mut got = 0;
-        let nlen = net.node.len();
+        let nlen = net.node.len() as Addr;
         for _ in 0..nlen {
             self.nput += 1; // start allocation from 1
             if net.node_is_free(self.nput % nlen) {
-                self.nloc[got] = self.nput % nlen;
+                self.loc[got] = self.nput % nlen;
                 got += 1;
             }
             if got >= num {
@@ -283,37 +328,166 @@ impl Redex {
     }
 }
 
-pub fn interact_link(redex: &mut Redex, net: &mut Net, a: Port, b: Port) -> bool {
+fn interact_link(redex: &mut RBag, net: &mut Net, a: Port, b: Port) -> bool {
     let (v, c) = if a.tag() == VAR { (a, b) } else { (b, a) };
-    let vnode = net.take(v.addr() as usize);
-    if vnode.right() == FREE {
-        // this node is an indirection node and has been cleared
+    assert!(
+        v.tag() == VAR,
+        "interact_link: one of a and b must be a VAR port"
+    );
+    let vnode = net.take(v.addr());
+    if vnode.left() != FREE {
+        // this node is an indirection node
         redex.push_redex(Pair::new(vnode.left(), c));
         true
     } else {
         // this node becomes an indirection node
-        let other = if c == vnode.left() {
-            vnode.right()
-        } else {
-            vnode.left()
-        };
-        net.put(v.addr() as usize, Pair::new(other, FREE));
-        false
+        net.put(v.addr(), Pair::new(c, FREE));
+        true
     }
 }
-pub fn interact_void(_redex: &mut Redex, _net: &Net, _a: Port, _b: Port) -> bool {
+fn interact_call(
+    redex: &mut RBag,
+    alloc: &mut Alloc,
+    net: &mut Net,
+    a: Port,
+    b: Port,
+    rom: &ROM,
+) -> bool {
+    let (r, c) = if a.tag() == REF { (a, b) } else { (b, a) };
+    assert!(
+        r.tag() == REF,
+        "interact_call: one of a and b must be a REF port"
+    );
+    if c.tag() == DUP {
+        if rom.is_safe(r.addr()) {
+            interact_copy(redex, net, r, c)
+        } else {
+            panic!("dup-ref: unsafe duplication of a non-safe definition");
+        }
+    } else {
+        let def = rom.load_def(redex, alloc, net, r.addr());
+        if let Some(def) = def {
+            redex.push_redex(Pair::new(def, c));
+            true
+        } else {
+            false
+        }
+    }
+}
+fn interact_copy(redex: &mut RBag, net: &mut Net, a: Port, b: Port) -> bool {
+    let (l, c) = if a.is_literal() { (a, b) } else { (b, a) };
+    assert!(
+        l.is_literal(),
+        "interact_copy: one of a and b must be a literal port"
+    );
+    let cnode = net.take(c.addr());
+    redex.push_redex(Pair::new(l.clone(), cnode.left()));
+    redex.push_redex(Pair::new(l, cnode.right()));
     true
 }
-pub fn step(redex: &mut Redex, net: &mut Net) -> bool {
+fn interact_anni(redex: &mut RBag, net: &mut Net, a: Port, b: Port) -> bool {
+    let anode = net.take(a.addr());
+    let bnode = net.take(b.addr());
+    redex.push_redex(Pair::new(anode.left(), bnode.left()));
+    redex.push_redex(Pair::new(anode.right(), bnode.right()));
+    true
+}
+fn interact_comm(redex: &mut RBag, alloc: &mut Alloc, net: &mut Net, a: Port, b: Port) -> bool {
+    if !alloc.request(net, 6) {
+        return false;
+    }
+
+    let anode = net.take(a.addr());
+    let bnode = net.take(b.addr());
+
+    let node0 = a.addr();
+    let node1 = b.addr();
+    let node2 = alloc.loc[0];
+    let node3 = alloc.loc[1];
+
+    let port0 = Port::new(b.tag(), node0);
+    let port1 = Port::new(b.tag(), node1);
+    let port2 = Port::new(a.tag(), node2);
+    let port3 = Port::new(a.tag(), node3);
+
+    let var0 = alloc.loc[2];
+    let var1 = alloc.loc[3];
+    let var2 = alloc.loc[4];
+    let var3 = alloc.loc[5];
+
+    redex.push_redex(Pair::new(port0.clone(), anode.left()));
+    redex.push_redex(Pair::new(port1.clone(), anode.right()));
+    redex.push_redex(Pair::new(port2.clone(), bnode.left()));
+    redex.push_redex(Pair::new(port3.clone(), bnode.right()));
+
+    net.put(node0, Pair::new(Port::new(VAR, var0), Port::new(VAR, var1)));
+    net.put(node1, Pair::new(Port::new(VAR, var2), Port::new(VAR, var3)));
+    net.put(node2, Pair::new(Port::new(VAR, var0), Port::new(VAR, var2)));
+    net.put(node3, Pair::new(Port::new(VAR, var1), Port::new(VAR, var3)));
+
+    net.put(var0, Pair::new(port0.clone(), port2.clone()));
+    net.put(var1, Pair::new(port0, port3.clone()));
+    net.put(var2, Pair::new(port1.clone(), port2));
+    net.put(var3, Pair::new(port1, port3));
+
+    true
+}
+fn interact_oper(redex: &mut RBag, net: &mut Net, a: Port, b: Port) -> bool {
+    let (o, c) = if a.tag() == OPR { (a, b) } else { (b, a) };
+    assert!(
+        o.tag() == OPR,
+        "interact_oper: one of a and b must be a NUM port"
+    );
+    let onode = net.take(o.addr());
+    let d = onode.left();
+    if d.tag() == NUM {
+        let cnum = Num(c.addr());
+        let dnum = Num(d.addr());
+        let result = Num::operate(cnum, dnum);
+        redex.push_redex(Pair::new(result.to_port(), onode.right()));
+        true
+    } else {
+        net.put(o.addr(), Pair::new(c, onode.right()));
+        redex.push_redex(Pair::new(o, d));
+        true
+    }
+}
+fn interact_swit(redex: &mut RBag, net: &mut Net, a: Port, b: Port) -> bool {
+    let (s, c) = if a.tag() == SWI { (a, b) } else { (b, a) };
+    assert!(
+        s.tag() == SWI,
+        "interact_swit: one of a and b must be a SWI port"
+    );
+    let snode = net.take(s.addr());
+    let cnum = Num(c.addr());
+    assert!(cnum.is_num(), "interact_swit: NUM node must be a number");
+    let cv = cnum.value();
+    let val = Num::new_u8(cv >> 1).to_port();
+    if cv % 2 == 0 {
+        redex.push_redex(Pair::new(snode.left(), val));
+        true
+    } else {
+        redex.push_redex(Pair::new(snode.right(), val));
+        true
+    }
+}
+
+pub fn step(redex: &mut RBag, alloc: &mut Alloc, net: &mut Net, rom: &ROM) -> bool {
     let top = redex.pop_redex();
     if let Some(top) = top {
         let a = top.left();
         let b = top.right();
         let rule = Port::rule_for(a.clone(), b.clone());
         let success = match rule {
-            VOID => interact_void(redex, net, a, b),
-            _ => todo!(),
-            // _ => unreachable!(),
+            LINK => interact_link(redex, net, a, b),
+            CALL => interact_call(redex, alloc, net, a, b, rom),
+            VOID => true, // interact_void clears two nodes by doing nothing
+            COPY => interact_copy(redex, net, a, b),
+            ANNI => interact_anni(redex, net, a, b),
+            COMM => interact_comm(redex, alloc, net, a, b),
+            OPER => interact_oper(redex, net, a, b),
+            SWIT => interact_swit(redex, net, a, b),
+            _ => unreachable!(),
         };
         if success {
             true
@@ -324,46 +498,6 @@ pub fn step(redex: &mut Redex, net: &mut Net) -> bool {
     } else {
         false
     }
-}
-
-// loads a definition into memory,
-// returning the def's root address in memory
-pub fn load_def(redex: &mut Redex, net: &mut Net, def: &Def) -> Option<Port> {
-    fn transfer_port(nloc: &Vec<usize>, p: Port) -> Port {
-        if p.tag() == NUM || p.tag() == ERA || p.tag() == REF || p == FREE {
-            // NUM represent values, REF point to the ROM, ERA is a special node
-            // so they are left as is
-            p
-        } else {
-            Port::new(p.tag(), nloc[(p.addr() - 1) as usize] as Addr)
-        }
-    }
-    fn transfer_pair(nloc: &Vec<usize>, pair: &Pair) -> Pair {
-        Pair::new(
-            transfer_port(nloc, pair.left()),
-            transfer_port(nloc, pair.right()),
-        )
-    }
-
-    if redex.node_alloc(net, def.node.len() - 1) {
-        // node i (starting from 1) is mapped to nloc[i-1]
-        for (i, pair) in def.node.iter().enumerate().skip(1) {
-            net.put(redex.nloc[i - 1], transfer_pair(&redex.nloc, pair));
-        }
-        for pair in def.rbag.iter() {
-            redex.push_redex(transfer_pair(&redex.nloc, pair));
-        }
-        Some(transfer_port(&redex.nloc, def.root.clone()))
-    } else {
-        None
-    }
-}
-
-pub fn load_rom(redex: &mut Redex, net: &mut Net, rom: &ROM) {
-    // for def in rom.defs.iter() {
-    //     load_def(redex, net, def);
-    // }
-    todo!()
 }
 
 // Visualizations
@@ -445,12 +579,12 @@ impl Display for Net {
     }
 }
 
-impl Display for Redex {
+impl Display for Alloc {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "REDEX\n")?;
-        write!(f, "NLOC: ")?;
-        for (i, loc) in self.nloc.iter().enumerate() {
-            if i >= self.nput {
+        write!(f, "loc: ")?;
+        for (i, loc) in self.loc.iter().enumerate() {
+            if i as Addr >= self.nput {
                 break;
             }
             write!(f, "{:04X} ", loc)?;
@@ -458,8 +592,6 @@ impl Display for Redex {
                 write!(f, "\n")?;
             }
         }
-        write!(f, "\n")?;
-        write!(f, "========= STORE ========\n{}", self.store)?;
-        write!(f, "========================\n")
+        write!(f, "\n")
     }
 }

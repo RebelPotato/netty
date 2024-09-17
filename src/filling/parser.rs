@@ -1,4 +1,4 @@
-use super::ast::{Addr, Node, DefNode};
+use super::ast::{Addr, DefNode, Node, ROMNode};
 use super::Num;
 use pest::iterators::Pair;
 use pest::Parser;
@@ -108,15 +108,25 @@ fn parse_def(pair: Pair<Rule>) -> DefNode {
         store: node,
     }
 }
-pub fn parse(s: &str) -> Result<Vec<DefNode>, pest::error::Error<Rule>> {
+pub fn parse(s: &str) -> Result<ROMNode, pest::error::Error<Rule>> {
     let parsed = Filling::parse(Rule::main, s)?.next().unwrap();
     let inner = parsed.into_inner();
 
+    let mut main = None;
     let mut defs = Vec::new();
     for def in inner {
         if let Rule::def = def.as_rule() {
-            defs.push(parse_def(def));
+            let def = parse_def(def);
+            if def.name == "main" {
+                main = Some(def);
+            } else {
+                defs.push(def);
+            }
         }
     }
-    Ok(defs)
+    if let Some(main) = main {
+        Ok(ROMNode::new(main, defs))
+    } else {
+        panic!("No main definition found");
+    }
 }
