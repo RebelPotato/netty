@@ -35,7 +35,6 @@ fn parse_op(s: &str) -> NumTag {
 
 fn parse_num(pair: Pair<Rule>) -> Num {
     let pair = pair.into_inner().next().unwrap();
-    println!("{}", pair.as_str());
     match pair.as_rule() {
         Rule::u8 => Num::new_u8(pair.as_str().parse().unwrap()),
         Rule::opn => {

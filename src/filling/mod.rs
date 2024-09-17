@@ -7,6 +7,8 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
+use crate::achievements::unlock_achievement;
+
 /* Ports and Pairs */
 // 3-bit tag
 pub type Tag = u8;
@@ -150,14 +152,30 @@ impl Num {
     pub fn reversed(&self) -> Self {
         Num(self.0 ^ (NREV as u16) << 8)
     }
-    pub fn operate(a: Self, b: Self) -> Self {
+    pub fn combine(a: Self, b: Self) -> Self {
         match (a.is_sym(), b.is_sym()) {
-            (true, true) => Num::new_u8(0),
+            (true, true) => {
+                unlock_achievement("combining operators", r#"
+You tried to merge two operators together, which is clearly absurd.
+"#);
+                Num::new_u8(0)
+            },
             (true, false) => Num::partial(a, b),
             (false, true) => Num::partial(b, a),
             (false, false) => match (a.is_op(), b.is_op()) {
-                (true, true) => Num::new_u8(0),
-                (false, false) => Num::new_u8(0),
+                (true, true) => {
+                    unlock_achievement("combining partially applied operators", r#"
+You tried to merge two partially applied operators together, which is obviously
+wrong.
+"#);
+                    Num::new_u8(0)
+                },
+                (false, false) => {
+                    unlock_achievement("combining numbers", r#"
+You tried to merge two numbers together. What are you even thinking?
+"#);
+                    Num::new_u8(0)
+                },
                 (true, false) => Self::apply(a, b.value()),
                 (false, true) => Self::apply(b, a.value()),
             },
@@ -333,10 +351,6 @@ impl Alloc {
 
 fn interact_link(redex: &mut RBag, net: &mut Net, a: Port, b: Port) -> bool {
     let (v, c) = if a.tag() == VAR { (a, b) } else { (b, a) };
-    assert!(
-        v.tag() == VAR,
-        "interact_link: one of a and b must be a VAR port"
-    );
     let vnode = net.take(v.addr());
     if vnode.left() != FREE {
         // this node is an indirection node
@@ -357,15 +371,23 @@ fn interact_call(
     rom: &ROM,
 ) -> bool {
     let (r, c) = if a.tag() == REF { (a, b) } else { (b, a) };
-    assert!(
-        r.tag() == REF,
-        "interact_call: one of a and b must be a REF port"
-    );
+
+    // this is copied from HVM, which calls it a "copy optimization"
+    // cloning references means that references are lazily loaded and eagerly cloned
+    // instead of being eagerly loaded and lazily cloned
+    // optimization for recursive functions?
+    // avoidable if loading incrementally using addresses?
     if c.tag() == DUP {
         if rom.is_safe(r.addr()) {
             interact_copy(redex, net, r, c)
         } else {
-            panic!("dup-ref: unsafe duplication of a non-safe definition");
+           unlock_achievement("dup-rev violation", r#"
+You have tried to duplicate an unsafe reference. While this is perfectly valid
+on IC semantics (i.e. if you know what you're doing), this can lead to unsound 
+reductions when compiling lambda terms to Filling. Maybe we'll add an "-unsafe"
+flag to allow this in the future?
+"#);
+            false
         }
     } else {
         let def = rom.load_def(redex, alloc, net, r.addr());
@@ -379,10 +401,6 @@ fn interact_call(
 }
 fn interact_copy(redex: &mut RBag, net: &mut Net, a: Port, b: Port) -> bool {
     let (l, c) = if a.is_literal() { (a, b) } else { (b, a) };
-    assert!(
-        l.is_literal(),
-        "interact_copy: one of a and b must be a literal port"
-    );
     let cnode = net.take(c.addr());
     redex.push_redex(Pair::new(l.clone(), cnode.left()));
     redex.push_redex(Pair::new(l, cnode.right()));
@@ -437,16 +455,12 @@ fn interact_comm(redex: &mut RBag, alloc: &mut Alloc, net: &mut Net, a: Port, b:
 }
 fn interact_oper(redex: &mut RBag, net: &mut Net, a: Port, b: Port) -> bool {
     let (o, c) = if a.tag() == OPR { (a, b) } else { (b, a) };
-    assert!(
-        o.tag() == OPR,
-        "interact_oper: one of a and b must be a NUM port"
-    );
     let onode = net.take(o.addr());
     let d = onode.left();
     if d.tag() == NUM {
         let cnum = Num(c.addr());
         let dnum = Num(d.addr());
-        let result = Num::operate(cnum, dnum);
+        let result = Num::combine(cnum, dnum);
         redex.push_redex(Pair::new(result.to_port(), onode.right()));
         true
     } else {
@@ -457,13 +471,14 @@ fn interact_oper(redex: &mut RBag, net: &mut Net, a: Port, b: Port) -> bool {
 }
 fn interact_swit(redex: &mut RBag, net: &mut Net, a: Port, b: Port) -> bool {
     let (s, c) = if a.tag() == SWI { (a, b) } else { (b, a) };
-    assert!(
-        s.tag() == SWI,
-        "interact_swit: one of a and b must be a SWI port"
-    );
     let snode = net.take(s.addr());
     let cnum = Num(c.addr());
-    assert!(cnum.is_num(), "interact_swit: NUM node must be a number");
+    if !cnum.is_num() {
+        unlock_achievement("matching on operators", r#"
+You have passed an operator (like [+] or [2+]) to a switch node, which gets you
+a type error! Switch nodes are only supposed to match on numbers, you know.
+"#)
+    }
     let cv = cnum.value();
     let val = Num::new_u8(cv >> 1).to_port();
     if cv % 2 == 0 {
