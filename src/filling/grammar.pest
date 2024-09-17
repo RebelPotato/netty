@@ -15,10 +15,11 @@ dup = { "{" ~ tree ~ tree ~ "}" }
 opr = { "$(" ~ tree ~ tree ~ ")" }
 swi = { "?(" ~ tree ~ tree ~ ")" }
 num = { u8 | opn }
-opn = { "[" ~ (lop | rop | prim) ~ "]" }
+u8 = @{ NUMBER+ }
+opn = { "[" ~ (lop | rop | oprev | prim) ~ "]" }
 lop = { u8 ~ prim }
 rop = { prim ~ u8 }
-u8 = @{ NUMBER+ }
+oprev = { ":" ~ prim }
 prim = { "+" | "-" | "*" | "/" }
 
 name = @{ char+  }

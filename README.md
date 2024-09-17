@@ -11,7 +11,8 @@ Filling code can written by hand, but it is quite tedious. You can also draw fil
 
 ## Bowl
 
-Bowl will be a GC-less functional language that compiles to Filling VM code. It should be a simple layer of syntactic sugar on top of Filling.
+Bowl will be a GC-less functional language that compiles to Filling VM code.
+It should be a simple layer of syntactic sugar on top of Filling.
 
 ## Soup
 
@@ -22,17 +23,10 @@ Boatloads of syntactic sugar.
 
 Potential features:
 
-* type checking (hard, may not do)
 * ADTs (as numbers and lambdas)
-* typeclasses (without types?)
+* typeclasses (without types? how?)
 * delimited continuations (for free with open lambdas)
 
 ---
-
-## Random thoughts
-
-A higher order lambda that clones its variables cannot be cloned. You win some, you lose some...
-
-Goal: bootstrapping I guess?
 
 Inspired by: HVM2, uxn

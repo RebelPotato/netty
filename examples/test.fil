@@ -1,8 +1,8 @@
 one = 1
 two = 2
-plus = [+]
+minus = [:-]
 
 main = result
   where
-    @one ~ $(plus_two result)
-    @plus ~ $(@two plus_two)
+    @one ~ $(minus_two result)
+    @minus ~ $(@two minus_two) 

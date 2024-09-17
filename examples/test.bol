@@ -2,8 +2,15 @@ cons = \x. \xs. \cons. \nil. cons x xs
 nil = \cons. \nil. nil
 
 map = \f. \list.
-  let cons = \x. \xs. cons (f x) (map f xs) in
+  let cons = \x. \xs.
+    let first = f x in
+    let rest = map f xs in
+    cons first rest
+  in
   let nil = nil in
   list cons nil
 
-main = map (\x. (+) 1 x) (cons 2 (cons 3 (cons 4 nil)))
+main = 
+  let inc = \x. (+) 1 x in
+  let list = (cons 2 nil) in
+  map inc list

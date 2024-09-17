@@ -9,6 +9,8 @@ use std::{
 
 use crate::achievements::unlock_achievement;
 
+pub use parser::parse;
+
 /* Ports and Pairs */
 // 3-bit tag
 pub type Tag = u8;
@@ -108,7 +110,7 @@ pub const NREM: NumTag = 0x06; // remainder
 pub const NEQU: NumTag = 0x07; // equality
                                // TODO: more operations
 
-pub const NREV: NumTag = 0x20; // set fifth bit to reverse the operation
+pub const NREV: NumTag = 0x10; // set fifth bit to reverse the operation
 
 pub type NumValue = u8; // 8-bit value
 pub const NUM_MAX: NumValue = 0xFF;
@@ -155,27 +157,36 @@ impl Num {
     pub fn combine(a: Self, b: Self) -> Self {
         match (a.is_sym(), b.is_sym()) {
             (true, true) => {
-                unlock_achievement("combining operators", r#"
+                unlock_achievement(
+                    "combining operators",
+                    r#"
 You tried to merge two operators together, which is clearly absurd.
-"#);
+"#,
+                );
                 Num::new_u8(0)
-            },
+            }
             (true, false) => Num::partial(a, b),
             (false, true) => Num::partial(b, a),
             (false, false) => match (a.is_op(), b.is_op()) {
                 (true, true) => {
-                    unlock_achievement("combining partially applied operators", r#"
+                    unlock_achievement(
+                        "combining partially applied operators",
+                        r#"
 You tried to merge two partially applied operators together, which is obviously
 wrong.
-"#);
+"#,
+                    );
                     Num::new_u8(0)
-                },
+                }
                 (false, false) => {
-                    unlock_achievement("combining numbers", r#"
+                    unlock_achievement(
+                        "combining numbers",
+                        r#"
 You tried to merge two numbers together. What are you even thinking?
-"#);
+"#,
+                    );
                     Num::new_u8(0)
-                },
+                }
                 (true, false) => Self::apply(a, b.value()),
                 (false, true) => Self::apply(b, a.value()),
             },
@@ -183,8 +194,9 @@ You tried to merge two numbers together. What are you even thinking?
     }
     fn apply(op: Self, y: NumValue) -> Self {
         let x = op.value();
+        let tag = op.tag() & !NREV;
         let (x, y) = if op.is_reversed() { (y, x) } else { (x, y) };
-        match op.tag() {
+        match tag {
             NADD => Num::new_u8(x.wrapping_add(y)),
             NSUB => Num::new_u8(x.wrapping_sub(y)),
             NMUL => Num::new_u8(x.wrapping_mul(y)),
@@ -381,12 +393,15 @@ fn interact_call(
         if rom.is_safe(r.addr()) {
             interact_copy(redex, net, r, c)
         } else {
-           unlock_achievement("dup-rev violation", r#"
+            unlock_achievement(
+                "dup-rev violation",
+                r#"
 You have tried to duplicate an unsafe reference. While this is perfectly valid
 on IC semantics (i.e. if you know what you're doing), this can lead to unsound 
 reductions when compiling lambda terms to Filling. Maybe we'll add an "-unsafe"
 flag to allow this in the future?
-"#);
+"#,
+            );
             false
         }
     } else {
@@ -474,10 +489,13 @@ fn interact_swit(redex: &mut RBag, alloc: &mut Alloc, net: &mut Net, a: Port, b:
     let snode = net.take(s.addr());
     let cnum = Num(c.addr());
     if !cnum.is_num() {
-        unlock_achievement("matching on operators", r#"
+        unlock_achievement(
+            "matching on operators",
+            r#"
 You have passed an operator (like [+] or [2+]) to a switch node, which gets you
 a type error! Switch nodes are only supposed to match on numbers, you know.
-"#)
+"#,
+        )
     }
     if !alloc.request(net, 1) {
         return false;
@@ -560,15 +578,24 @@ impl Display for Num {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let tag = self.tag();
         if tag < NREV {
-            if self.tag() == NSYM {
-                write!(f, "{}", num_tag_to_str(self.value()))?;
+            if tag == NSYM {
+                if self.value() < NREV {
+                    write!(f, "{}", num_tag_to_str(self.value()))?;
+                } else {
+                    write!(
+                        f,
+                        ":{}",
+                        num_tag_to_str(self.value() & !NREV).chars().nth(0).unwrap()
+                    )?;
+                }
             } else {
                 write!(f, "{:02X}", self.value())?;
             }
-            write!(f, "{}", num_tag_to_str(self.tag()))
+            write!(f, "{}", num_tag_to_str(tag))
         } else {
-            write!(f, "{}", num_tag_to_str(self.tag()))?;
-            if self.tag() == NSYM {
+            let tag = tag & !NREV;
+            write!(f, "{}", num_tag_to_str(tag))?;
+            if tag == NSYM {
                 write!(f, "{}", num_tag_to_str(self.value()))
             } else {
                 write!(f, "{:02X}", self.value())
@@ -620,7 +647,7 @@ impl Display for ROM {
         for (i, def) in self.defs.iter().enumerate() {
             write!(f, "[{:04X}]\n{}\n", i, def)?;
         }
-        write!(f, "")
+        Ok(())
     }
 }
 
@@ -629,7 +656,7 @@ impl Display for RBag {
         for (i, pair) in self.redex.iter().enumerate() {
             write!(f, "{:04X} {}\n", i, pair)?;
         }
-        write!(f, "")
+        Ok(())
     }
 }
 
@@ -638,7 +665,7 @@ impl Display for Net {
         for (i, pair) in self.node.iter().enumerate() {
             write!(f, "{:04X} {}\n", i, pair)?;
         }
-        write!(f, "")
+        Ok(())
     }
 }
 

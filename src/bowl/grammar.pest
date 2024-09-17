@@ -1,0 +1,25 @@
+main = {
+  SOI
+  ~ def+
+  ~ EOI
+}
+def = { name ~ "=" ~ exp }
+exp = { let | cexp }
+cexp = { bra | app | aexp }
+aexp = { primop | u8 | name | lam }
+
+let = { "let" ~ name ~ "=" ~ cexp ~ "in" ~ exp }
+bra = { "(" ~ cexp ~ ")" }
+app = ${ aexp ~ (" "+ ~ aexp)* }
+lam = { "\\" ~ name ~ "." ~ exp }
+primop = ${ "(" ~ prim ~ ")" }
+prim = { "+" | "-" | "*" | "/" }
+u8 = @{ NUMBER+ }
+
+name = @{ !(reserved ~ WHITESPACE) ~ char+ }
+reserved = { "let" | "in" | "where" }
+char = { ASCII_ALPHANUMERIC | "_" | "/" | "-" }
+WHITESPACE = _{ " " | NEWLINE }
+COMMENT = _{block | line}
+block = { "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+line = { "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }

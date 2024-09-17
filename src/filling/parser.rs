@@ -52,6 +52,10 @@ fn parse_num(pair: Pair<Rule>) -> Num {
                     let num = inner.next().unwrap().as_str().parse().unwrap();
                     Num::new(op, num).reversed()
                 },
+                Rule::oprev => {
+                    let op = parse_op(inner.into_inner().next().unwrap().as_str());
+                    Num::new(super::NSYM, op | super::NREV)
+                },
                 Rule::prim => {
                     let op = parse_op(inner.as_str());
                     Num::new(super::NSYM, op)

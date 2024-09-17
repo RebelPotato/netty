@@ -1,7 +1,7 @@
 use super::{Def, Num, Pair, Port, Tag, FREE, ROM};
 use std::collections::HashMap;
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Addr(pub usize);
 
 #[derive(Debug)]
