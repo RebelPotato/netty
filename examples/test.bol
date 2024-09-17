@@ -1,0 +1,9 @@
+cons = \x. \xs. \cons. \nil. cons x xs
+nil = \cons. \nil. nil
+
+map = \f. \list.
+  let cons = \x. \xs. cons (f x) (map f xs) in
+  let nil = nil in
+  list cons nil
+
+main = map (\x. (+) 1 x) (cons 2 (cons 3 (cons 4 nil)))

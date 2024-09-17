@@ -469,7 +469,7 @@ fn interact_oper(redex: &mut RBag, net: &mut Net, a: Port, b: Port) -> bool {
         true
     }
 }
-fn interact_swit(redex: &mut RBag, net: &mut Net, a: Port, b: Port) -> bool {
+fn interact_swit(redex: &mut RBag, alloc: &mut Alloc, net: &mut Net, a: Port, b: Port) -> bool {
     let (s, c) = if a.tag() == SWI { (a, b) } else { (b, a) };
     let snode = net.take(s.addr());
     let cnum = Num(c.addr());
@@ -479,15 +479,24 @@ You have passed an operator (like [+] or [2+]) to a switch node, which gets you
 a type error! Switch nodes are only supposed to match on numbers, you know.
 "#)
     }
+    if !alloc.request(net, 1) {
+        return false;
+    }
     let cv = cnum.value();
     let val = Num::new_u8(cv >> 1).to_port();
-    if cv % 2 == 0 {
-        redex.push_redex(Pair::new(snode.left(), val));
-        true
+    let node = alloc.loc[0];
+
+    // snode turns into ((val C) *) or (* (val C))
+    redex.push_redex(Pair::new(snode.left(), Port::new(CON, s.addr())));
+
+    let pair = if cv & 1 == 0 {
+        Pair::new(Port::new(CON, node), Port::new(ERA, 0))
     } else {
-        redex.push_redex(Pair::new(snode.right(), val));
-        true
-    }
+        Pair::new(Port::new(ERA, 0), Port::new(CON, node))
+    };
+    net.put(s.addr(), pair);
+    net.put(node, Pair::new(val, c));
+    true
 }
 
 pub fn step(redex: &mut RBag, alloc: &mut Alloc, net: &mut Net, rom: &ROM) -> bool {
@@ -504,7 +513,7 @@ pub fn step(redex: &mut RBag, alloc: &mut Alloc, net: &mut Net, rom: &ROM) -> bo
             ANNI => interact_anni(redex, net, a, b),
             COMM => interact_comm(redex, alloc, net, a, b),
             OPER => interact_oper(redex, net, a, b),
-            SWIT => interact_swit(redex, net, a, b),
+            SWIT => interact_swit(redex, alloc, net, a, b),
             _ => unreachable!(),
         };
         if success {

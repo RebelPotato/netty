@@ -27,5 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", redex);
     }
 
+    // now to extract the result from the net
+
     Ok(())
 }
