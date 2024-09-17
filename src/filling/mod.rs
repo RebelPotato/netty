@@ -1,6 +1,6 @@
 // reference implementation for filling VM
-pub mod parser;
 pub mod ast;
+pub mod parser;
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -108,6 +108,8 @@ pub const NEQU: NumTag = 0x07; // equality
 
 pub type NumValue = u8; // 8-bit value
 pub const NUM_MAX: NumValue = 0xFF;
+
+#[derive(Debug)]
 pub struct Num(u16); // 13-bit tag ~ value
 
 impl Num {
@@ -123,7 +125,7 @@ impl Num {
     pub fn value(&self) -> NumValue {
         self.0 as NumValue
     }
-    pub fn as_port(&self) -> Port {
+    pub fn to_port(&self) -> Port {
         Port::new(NUM, self.0 as Addr)
     }
     pub fn partial(a: Self, b: Self) -> Self {
@@ -226,7 +228,8 @@ impl Net {
         }
     }
     pub fn node_is_free(&self, i: usize) -> bool {
-        self.node[i] == Pair(0)
+        // address 0 is reserved to represent FREE
+        i != 0 && self.node[i] == Pair(0)
     }
     pub fn get(&self, i: usize) -> Pair {
         self.node[i].clone()
@@ -266,9 +269,9 @@ impl Redex {
     pub fn node_alloc(&mut self, net: &Net, num: usize) -> bool {
         let mut got = 0;
         let nlen = net.node.len();
-        for _ in 0..net.node.len() {
-            self.nput += 1; // index 0 reserved
-            if self.nput < nlen || net.node_is_free(self.nput % nlen) {
+        for _ in 0..nlen {
+            self.nput += 1; // start allocation from 1
+            if net.node_is_free(self.nput % nlen) {
                 self.nloc[got] = self.nput % nlen;
                 got += 1;
             }
@@ -289,7 +292,11 @@ pub fn interact_link(redex: &mut Redex, net: &mut Net, a: Port, b: Port) -> bool
         true
     } else {
         // this node becomes an indirection node
-        let other = if c == vnode.left() { vnode.right() } else { vnode.left() };
+        let other = if c == vnode.left() {
+            vnode.right()
+        } else {
+            vnode.left()
+        };
         net.put(v.addr() as usize, Pair::new(other, FREE));
         false
     }
@@ -322,59 +329,31 @@ pub fn step(redex: &mut Redex, net: &mut Net) -> bool {
 // loads a definition into memory,
 // returning the def's root address in memory
 pub fn load_def(redex: &mut Redex, net: &mut Net, def: &Def) -> Option<Port> {
-    // calculate number of variables
-    let node_count = def.node.len();
-    let mut counter = node_count;
-    let mut var_map = HashMap::new();
-    for pair in def.node.iter() {
-        let left = pair.left();
-        let right = pair.right();
-        if left.tag() == VAR && !var_map.contains_key(&left.addr()) {
-            var_map.insert(left.addr(), counter);
-            counter += 1;
-        }
-        if right.tag() == VAR && !var_map.contains_key(&right.addr()) {
-            var_map.insert(right.addr(), counter);
-            counter += 1;
-        }
-    }
-
-    fn transfer_port(nloc: &Vec<usize>, p: Port, var_map: &HashMap<u16, usize>) -> Port {
-        if p.tag() == VAR {
-            Port::new(VAR, nloc[*var_map.get(&p.addr()).unwrap()] as Addr)
+    fn transfer_port(nloc: &Vec<usize>, p: Port) -> Port {
+        if p.tag() == NUM || p.tag() == ERA || p.tag() == REF || p == FREE {
+            // NUM represent values, REF point to the ROM, ERA is a special node
+            // so they are left as is
+            p
         } else {
-            Port::new(p.tag(), nloc[p.addr() as usize] as Addr)
+            Port::new(p.tag(), nloc[(p.addr() - 1) as usize] as Addr)
         }
     }
-    fn transfer_pair(nloc: &Vec<usize>, pair: &Pair, var_map: &HashMap<u16, usize>) -> Pair {
+    fn transfer_pair(nloc: &Vec<usize>, pair: &Pair) -> Pair {
         Pair::new(
-            transfer_port(nloc, pair.left(), var_map),
-            transfer_port(nloc, pair.right(), var_map),
+            transfer_port(nloc, pair.left()),
+            transfer_port(nloc, pair.right()),
         )
     }
 
-    // variables are mapped to the bottom of the node buffer
-    // this is an arbitrary choice
-    if redex.node_alloc(net, counter) {
-        // node i maps to nloc[i]
-        // var i maps to nloc[var_map[i]]
-        // load node buffer, then redex bag
-        for (i, pair) in def.node.iter().enumerate() {
-            net.put(redex.nloc[i], transfer_pair(&redex.nloc, pair, &var_map));
-            // FREE is the initial value for variables, so no need to put them in manually
-        }
-        for (_, v) in var_map.iter() {
-            // the variables need to be marked as something other than Port(0)
-            // so that latter allocations won't overwrite them
-            let pair = Pair::new(FREE, NONE);
-            net.put(redex.nloc[*v], pair);
+    if redex.node_alloc(net, def.node.len() - 1) {
+        // node i (starting from 1) is mapped to nloc[i-1]
+        for (i, pair) in def.node.iter().enumerate().skip(1) {
+            net.put(redex.nloc[i - 1], transfer_pair(&redex.nloc, pair));
         }
         for pair in def.rbag.iter() {
-            redex
-                .store
-                .push_redex(transfer_pair(&redex.nloc, pair, &var_map));
+            redex.push_redex(transfer_pair(&redex.nloc, pair));
         }
-        Some(transfer_port(&redex.nloc, def.root.clone(), &var_map))
+        Some(transfer_port(&redex.nloc, def.root.clone()))
     } else {
         None
     }

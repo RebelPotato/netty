@@ -14,7 +14,7 @@ con = { "(" ~ tree ~ tree ~ ")" }
 dup = { "{" ~ tree ~ tree ~ "}" }
 opr = { "$(" ~ tree ~ tree ~ ")" }
 swi = { "?(" ~ tree ~ tree ~ ")" }
-conn = { tree ~ "~" ~ tree }
+conn = { node ~ "~" ~ node }
 
 name = @{ char+  }
 char = { ASCII_ALPHANUMERIC | "_" | "/" | "-" }

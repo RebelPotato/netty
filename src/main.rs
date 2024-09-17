@@ -1,6 +1,7 @@
 pub mod net;
 pub mod filling;
-use filling::parser::parse_rom;
+use filling::ast::to_rom;
+use filling::parser::parse;
 use filling::{load_def, Net, Redex};
 
 const PROGRAM: &str = r"
@@ -12,7 +13,8 @@ main = (a b)
 ";
 
 fn main() -> Result<(),  Box<dyn std::error::Error>> {
-    let rom = parse_rom(PROGRAM)?;
+    let nodes = parse(PROGRAM)?;
+    let rom = to_rom(nodes);
     println!("{}", rom);
 
     let mut net = Net::new(0xf);
