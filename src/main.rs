@@ -8,6 +8,12 @@ use bowl::parser::parse;
 use filling::{step, Alloc, Net, RBag};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // TODO: 
+    // bowl is necessary if it provides: lambda and application syntax
+    // switch expressions
+    // tuples and pattern matching for tuples
+    // "connections", like lets but no new variables
+    // flying lambdas? are they dynamic variables?
     let source = read_to_string(Path::new("examples/test.bol"))?;
     let program = parse(&source)?;
     println!("{}", program);

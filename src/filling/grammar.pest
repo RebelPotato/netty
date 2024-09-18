@@ -8,7 +8,7 @@ exp = { tree ~ ("where" ~ conn+)? }
 conn = { tree ~ "~" ~ tree }
 tree = { node | name }
 node = { era | ref | num | con | dup | opr | swi }
-era = { "*" }
+era = { "*" ~ name? }
 ref = { "@" ~ name }
 con = { "(" ~ tree ~ tree ~ ")" }
 dup = { "{" ~ tree ~ tree ~ "}" }
@@ -23,7 +23,7 @@ oprev = { ":" ~ prim }
 prim = { "+" | "-" | "*" | "/" }
 
 name = @{ char+  }
-char = { ASCII_ALPHANUMERIC | "_" | "/" | "-" }
+char = { ASCII_ALPHANUMERIC | "_" | "/" | "-" | "'" }
 WHITESPACE = _{ " " | NEWLINE }
 COMMENT = _{block | line}
 block = { "/*" ~ (!"*/" ~ ANY)* ~ "*/" }

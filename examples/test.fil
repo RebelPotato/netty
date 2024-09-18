@@ -1,8 +1,15 @@
-one = 1
-two = 2
-minus = [:-]
-
-main = result
+cons = (x (xs (cons' (*nil result))))
   where
-    @one ~ $(minus_two result)
-    @minus ~ $(@two minus_two) 
+    result' ~ (xs result)
+    cons' ~ (x result')
+
+nil = (*cons (nil nil))
+
+map = (f (list (list cons nil)))
+  where
+    cons ~ (x (xs inner))
+    {f0 f1} ~ f
+    f0 ~ (x first)
+    @map ~ (f1 second')
+    second' ~ (xs second)
+    @cons
